@@ -1,24 +1,16 @@
 import requests
-import semantic_version
 import asyncio
 import aioredis
 from settings import cache_url
 import json
-from fastapi import BackgroundTasks, FastAPI
-
+from registry_api import *
 import time
+import aiohttp
 
 redis = aioredis.from_url(cache_url)
 # await redis.set("my-key", "value")
 # value = await redis.get("my-key")
-
 url = "https://registry.npmjs.org"
-
-
-async def fetch_versions(package_name, session):
-    async with session.get(f"{url}/{package_name}") as response:
-        response = await response.json()
-        return [semantic_version.Version(i) for i in response['versions'].keys()]
 
 
 def get_versions(package_name):
@@ -39,30 +31,37 @@ def get_data_from_registry(package_name, version):
     return data
 
 
-def select_version(package, version) -> str:
-    """
-    This method simplifies the package name and returns a version to choose from the registry.
-    :param package:
-    :param version:
-    :return:
-    """
-    # check version for ['latest', no operator and send straight without simplified]
-    if version == 'latest':
-        return version
-
-    versions = get_versions(package_name=package)
-    try:
-        specs = semantic_version.NpmSpec(version)
-    except ValueError:
-        try:
-            version = version.split(" ")
-            specs = semantic_version.NpmSpec(version)
-        except Exception as e:
-            print("Could not parse version since wrong format of semVer. Using latest as version")
-            # FIXME End case problem : '>= 1.5.0 < 2'. Add coerce or manual handling in this end case
-            return 'latest'
-    version = specs.select(versions)
-    return version
+# def select_version(package, version) -> str:
+#     """
+#     This method simplifies the package name and returns a version to choose from the registry.
+#     :param package:
+#     :param version:
+#     :return:
+#     """
+#     start_time = time.time()
+# 
+#     # check version for ['latest', no operator and send straight without simplified]
+#     if version == 'latest':
+#         data = get_data_from_registry(package_name=package, version=version)
+#         print(f"FETCH VERSION to {package} TOOK {time.time() - start_time}")
+# 
+#         return data.get('version')
+# 
+#     versions = get_versions(package_name=package)
+#     try:
+#         specs = semantic_version.NpmSpec(version)
+#     except ValueError:
+#         try:
+#             version = version.split(" ")
+#             specs = semantic_version.NpmSpec(version)
+#         except Exception as e:
+#             print("Could not parse version since wrong format of semVer. Using latest as version")
+#             # FIXME End case problem : '>= 1.5.0 < 2'. Add coerce or manual handling in this end case
+#             return 'latest'
+#     version = specs.select(versions)
+#     print(f"FETCH VERSION to {package} TOOK {time.time() - start_time}")
+# 
+#     return version
 
 
 def get_pk(package_name, version):
@@ -100,56 +99,14 @@ def get_data(pk):
 #         #                                                   version=simplified_dependency_version)]))  ## In other words - scan it. So scan
 #     return pk_dependency
 
-async def fetch_version(package, version, session) -> str:
-    """
-    This method simplifies the package name and returns a version to choose from the registry.
-    :param package:
-    :param version:
-    :return:
-    """
-    # check version for ['latest', no operator and send straight without simplified]
-    if version == 'latest':
-        return version
-
-    versions = await fetch_versions(package_name=package, session=session)
-    try:
-        specs = semantic_version.NpmSpec(version)
-    except ValueError:
-        try:
-            version = version.split(" ")
-            specs = semantic_version.NpmSpec(version)
-        except Exception as e:
-            print("Could not parse version since wrong format of semVer. Using latest as version")
-            # FIXME End case problem : '>= 1.5.0 < 2'. Add coerce or manual handling in this end case
-            return 'latest'
-    version = specs.select(versions)
-    return version
-
-
-async def fetch_data_from_registry(package_name, version, session):
-    """TODO:: Decorator?"""
-    async with session.get(f"{url}/{package_name}/{version}") as response:
-        data = await response.json()
-        return data
-
-
 
 def get_fetched_pk(package_name, version):
     return f"{get_pk(package_name=package_name, version=version)}_fetched"
 
 
-async def get_simplified_from_unsimplified(package_name, package_version, session):
-    start_time = time.time()
-    fetched_pk = get_fetched_pk(package_name, package_version)
-    version_simplified = await redis.get(fetched_pk)
-    if version_simplified is None:
-        version_simplified = await fetch_version(package=package_name, version=package_version,
-                                                 session=session)
-        await redis.set(fetched_pk, str(version_simplified))
-    else:
-        print(f"SIMPLIFY VERSION for {package_name} - {package_version} got from redis")
-    print(f"SIMPLIFY VERSION for {package_name} - {package_version} took: {time.time() - start_time}")
-    return version_simplified
+async def updater_runner(package_name, version_name):
+    async with aiohttp.ClientSession() as session:
+        return await update_package(package_name, version_name, session)
 
 
 async def update_package(package_name, version_name, session):
@@ -160,13 +117,8 @@ async def update_package(package_name, version_name, session):
     :param session:
     :return:
     """
-    before_fetch_data = time.time()
-    data = await fetch_data_from_registry(package_name=package_name, version=version_name, session=session)
-    print(F"{package_name} - FETCH DATA took {time.time() - before_fetch_data} seconds")
-    if version_name == 'latest':
-        version_name = data.get('version')
     start_time = time.time()
-    print(f"Starting to update package: {package_name}")
+    data = await fetch_data_from_registry(package_name=package_name, version=version_name, session=session)
     dependencies = data.get('dependencies', {})
     pk_current = get_pk(package_name=package_name, version=version_name)  # from simplified
     tasks = []
@@ -181,28 +133,25 @@ async def update_package(package_name, version_name, session):
             tasks.append(task)
     dependency_ids = await asyncio.gather(*tasks)
     node_to_insert = {'dependencies': dependency_ids, 'name': package_name, 'version': str(version_name)}
-    redis_time = time.time()
     await redis.set(pk_current, json.dumps(node_to_insert))
-    print(
-        f"UPDATE TIME for {package_name} took : {time.time() - start_time} and time to update redis took {time.time() - redis_time}")
+    print(f"UPDATE PACKAGE: {package_name} took {time.time() - start_time}")
     return pk_current
 
 
-async def async_scan(package_name, version_name, session):
-    print(f"Starting async scan for {package_name}:{version_name}")
-    simplified_version = await get_simplified_from_unsimplified(package_name=package_name, package_version=version_name,
-                                                                session=session)
-    pk_pkg = get_pk(package_name=package_name, version=simplified_version)
-    result_from_cache = await redis.get(pk_pkg)
-    if result_from_cache is None:
-        start_time = time.time()
-        pk_pkg = await update_package(package_name, simplified_version, session)
-        print(f"GET UPDATE PACKAGE TOOK {time.time() - start_time}")
+async def get_simplified_from_unsimplified(package_name, package_version, session):
     start_time = time.time()
-    result = await get_json(pk_pkg)
-    print(f"GET JSON TOOK {time.time() - start_time}")
-    return result
-
+    fetched_pk = get_fetched_pk(package_name, package_version)
+    version_simplified = await redis.get(fetched_pk)
+    if version_simplified is None:
+        version_simplified = await fetch_version(package=package_name, version=package_version,
+                                                 session=session)
+        await redis.set(fetched_pk, str(version_simplified))
+    else:
+        print(f"SIMPLIFY VERSION for {package_name} - {package_version} got from redis")
+    print(f"SIMPLIFY VERSION for {package_name} - {package_version} took: {time.time() - start_time}")
+    if isinstance(version_simplified, bytes):
+        version_simplified = version_simplified.decode('utf-8')
+    return version_simplified
 
 
 original = {'express-3.7.2': {'dependencies': ['tornado-2.1.5'], 'name': 'express-3.7.2', 'last_updated': None},

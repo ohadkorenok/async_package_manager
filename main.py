@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from pydantic import BaseModel
 
-from utils import *
+from scan import async_scan
 
 
 class Item(BaseModel):
