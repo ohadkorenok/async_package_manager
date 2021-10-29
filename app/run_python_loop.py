@@ -1,11 +1,11 @@
 import asyncio
 import aiohttp
-from scan import *
+from app.scan import *
 
-# package_name = 'express'
-package_name = 'async'
-# version = 'latest'
-version = '2.0.1'
+package_name = 'express'
+# package_name = 'async'
+version = 'latest'
+# version = '2.0.1'
 
 
 async def main():
