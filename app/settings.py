@@ -1,7 +1,8 @@
 import os
 
 STAGE = os.environ.get("STAGE", 'dev')
-cache_url = "redis://localhost"
+# cache_url = "redis://localhost"
+cache_url = "redis://redis:6379"
 MONGO_HOST = 'localhost' if STAGE == 'dev' else "mongo"
 MONGO_USER = os.environ.get("MONGO_DB_USER", "root")
 MONGO_PASSWORD = os.environ.get("MONGO_DB_PASSWORD", "example")

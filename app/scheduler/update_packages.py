@@ -8,8 +8,6 @@ import asyncio
 
 
 async def update():
-    import os
-    os.system('say "Beer time."')
     await connect_to_db()
     packages = await Package.find(
         Package.last_updated_time < datetime.now() - timedelta(hours=TIME_TO_UPDATE_IN_HOURS)).to_list()
