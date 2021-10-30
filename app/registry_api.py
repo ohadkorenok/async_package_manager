@@ -1,6 +1,9 @@
 import semantic_version
 from fastapi import HTTPException
 from app.settings import REGISTRY_URL as url
+import logging
+
+logger = logging.getLogger("package_manager")
 
 
 async def fetch_versions(package_name: str, session):
@@ -31,13 +34,14 @@ async def fetch_version(package: str, version: str, session) -> str:
     """
     if version == 'latest':
         data, status = await fetch_data_from_registry(package_name=package, version=version, session=session)
-        print(f"data is : {data} and status is :{status}")
         if status != 200:
+            logger.error(f"Exception in retrieving {package} and version {version}")
             raise HTTPException(detail=f"Exception in retrieving {package} and version {version}", status_code=status)
         return data.get('version')
 
     versions, status = await fetch_versions(package_name=package, session=session)
     if status != 200:
+        logger.error(f"Exception in retrieving {package} and version {version}")
         raise HTTPException(detail=f"Exception in retrieving {package} and version {version}", status_code=status)
     try:
         specs = semantic_version.NpmSpec(version)
@@ -46,7 +50,7 @@ async def fetch_version(package: str, version: str, session) -> str:
             version = version.split(" ")
             specs = semantic_version.NpmSpec(version)
         except Exception as e:
-            print("Could not parse version since wrong format of semVer. Using latest as version")
+            logger.error("Could not parse version since wrong format of semVer. Using latest as version")
             return 'latest'
     version = specs.select(versions)
     return version

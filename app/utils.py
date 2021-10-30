@@ -130,7 +130,6 @@ async def simplify_and_update(package_name: str, version_name: str, session) -> 
     :param session:
     :return: id of pkg and version. in the format of `get_pk` method
     """
-    logger.error("WTF?! simplify finaly")
     simplified_version = await simplify_version(package_name=package_name, package_version=version_name,
                                                 session=session)  # can return exception
     pk_pkg, updated = await validate_if_updated(package_name=package_name,
