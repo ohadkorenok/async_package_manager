@@ -44,7 +44,7 @@ async def fetch_version(package: str, version: str, session) -> str:
         logger.error(f"Exception in retrieving {package} and version {version}")
         raise HTTPException(detail=f"Exception in retrieving {package} and version {version}", status_code=status)
     try:
-        specs = semantic_version.NpmSpec(version)
+        specs = semantic_version.NpmSpec(version) # Unsimplified version
     except ValueError:
         try:
             version = version.split(" ")

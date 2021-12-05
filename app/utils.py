@@ -39,7 +39,7 @@ def get_fetched_pk(package_name, version):
     return f"{get_pk(package_name=package_name, version=version)}_fetched"
 
 
-async def update_package(package_name, version_name, session):
+async def update_package(package_name, version_name, session): ## INV : version_name is simplified.
     """
     This method updates a package with simplified version by getting its data from the registry
     Later on, sends update task for each dependency it has.
